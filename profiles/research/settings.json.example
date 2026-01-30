@@ -1,0 +1,38 @@
+{
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "enabled": true
+    },
+    {
+      "name": "github",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "brave-search",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "custom-api",
+      "transport": "sse",
+      "url": "https://api.example.com/mcp",
+      "token": "${API_TOKEN}",
+      "enabled": false
+    }
+  ]
+}
