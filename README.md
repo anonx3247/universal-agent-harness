@@ -6,7 +6,7 @@ A multi-agent orchestration system with MCP (Model Context Protocol) server supp
 
 - 🤖 Multi-agent orchestration
 - 🔌 MCP server integration for extensible tool support
-- 💾 SQLite-based experiment tracking
+- 💾 SQLite-based run tracking
 - 💰 Cost and token usage tracking
 - 📊 Support for multiple LLM providers (Anthropic, OpenAI, Google, Mistral, Deepseek, etc.)
 - 📚 Library and CLI interfaces
@@ -21,10 +21,10 @@ npm install universal-agent-harness
 ## Library Usage
 
 ```typescript
-import { createExperiment, runExperiment } from 'universal-agent-harness';
+import { createRun, run } from 'universal-agent-harness';
 
-// Create an experiment
-const experiment = await createExperiment({
+// Create a run
+const result = await createRun({
   name: "solve-math-problem",
   problemId: "factorial-problem",  // References ./problems/factorial-problem/
   model: "claude-sonnet-4-5",
@@ -32,9 +32,9 @@ const experiment = await createExperiment({
   profile: "example"
 });
 
-// Run the experiment
-await runExperiment({
-  experimentName: "solve-math-problem",
+// Run (single tick)
+await run({
+  runName: "solve-math-problem",
   singleTick: true,
   onMessage: (msg) => console.log("Agent output:", msg)
 });
@@ -95,51 +95,53 @@ Configure MCP servers in `profiles/{profile}/settings.json`:
 ## CLI Usage
 
 ```bash
-# Create an experiment
-npx agent-harness create my-experiment \
+# Create a run
+npx agent-harness create my-run \
   -p factorial-problem \
   -m claude-sonnet-4-5 \
   -n 1 \
   --profile example
 
-# Run experiment (single tick)
-npx agent-harness run my-experiment --tick 0
+# Run (single tick)
+npx agent-harness run my-run --tick 0
 
-# Run experiment continuously
-npx agent-harness run my-experiment
+# Run continuously
+npx agent-harness run my-run
 
 # Run specific agent
-npx agent-harness run my-experiment --agent 0
+npx agent-harness run my-run --agent 0
 
 # Run with cost limit
-npx agent-harness run my-experiment --max-cost 5.0
+npx agent-harness run my-run --max-cost 5.0
 
-# List experiments
+# List runs
 npx agent-harness list
 
-# Clean up experiment
-npx agent-harness clean my-experiment
+# Clean up run
+npx agent-harness clean my-run
 ```
 
 ## API Reference
 
-### `createExperiment(config)`
+### `createRun(config)`
 
-Create a new experiment.
+Create a new run.
 
 **Parameters:**
-- `name` (string): Unique experiment name
+- `name` (string): Unique run name
 - `problemId` (string): Problem ID (directory name in `./problems/`)
 - `model` (Model): AI model to use
 - `agentCount` (number, optional): Number of agents (default: 1)
 - `profile` (string, optional): Profile name (default: "example")
 
-### `runExperiment(config)`
+**Returns:** `Promise<Result<RunResource>>`
 
-Run an experiment.
+### `run(config)`
+
+Run or continue a run.
 
 **Parameters:**
-- `experimentName` (string): Experiment name
+- `runName` (string): Run name
 - `agentIndex` (number, optional): Run specific agent
 - `singleTick` (boolean, optional): Run one tick only
 - `maxCost` (number, optional): Maximum cost limit
@@ -147,21 +149,31 @@ Run an experiment.
 - `onMessage` (function, optional): Message callback
 - `onCostUpdate` (function, optional): Cost update callback
 
-### `getExperiment(name)`
+**Returns:** `Promise<Result<{ cost: number } | void>>`
 
-Get experiment by name.
+### `getRun(name)`
 
-### `listExperiments()`
+Get run by name.
 
-List all experiments.
+**Returns:** `Promise<Result<RunResource>>`
 
-### `getExperimentCost(experiment)`
+### `listRuns()`
 
-Get total cost for an experiment.
+List all runs.
 
-### `deleteExperiment(name)`
+**Returns:** `Promise<RunResource[]>`
 
-Delete an experiment and all its data.
+### `getRunCost(run)`
+
+Get total cost for a run.
+
+**Returns:** `Promise<number>`
+
+### `deleteRun(name)`
+
+Delete a run and all its data.
+
+**Returns:** `Promise<Result<void>>`
 
 ### Profile Utilities
 
@@ -218,6 +230,7 @@ The library exports all core types for TypeScript users:
 - **Mistral**: mistral-large-latest, devstral-medium-latest, codestral-latest
 - **Deepseek**: deepseek-chat, deepseek-reasoner
 - **Moonshot AI**: kimi-k2-thinking
+- **RedPill AI**: kimi-k2.5, glm-4.7, llama-3.3-70b-instruct, qwen-2.5-7b-instruct
 
 ## Development
 
