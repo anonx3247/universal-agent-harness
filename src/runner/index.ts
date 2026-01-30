@@ -13,19 +13,24 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { withRetries, Result, err, ok } from "@app/lib/error";
 import { MessageResource } from "@app/resources/messages";
 import assert from "assert";
-import { createClientServerPair, errorToCallToolResult, createClientFromConfig } from "@app/lib/mcp";
+import { errorToCallToolResult, createClientFromConfig } from "@app/lib/mcp";
 import { loadProfileMCPConfig } from "@app/lib/mcp-config";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { concurrentExecutor } from "@app/lib/async";
 import { assertNever } from "@app/lib/assert";
-import { createComputerServer } from "@app/tools";
 import { RunConfig } from "./config";
 import { createLLM } from "@app/models/provider";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { getProblemContent } from "@app/lib/problems";
+import { getProfilePath } from "@app/lib/profiles";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 function loadPromptForProfile(profile: string): string {
-  const promptPath = join(__dirname, "../../profiles", profile, "prompt.md");
+  const promptPath = getProfilePath(profile, "prompt.md");
   return readFileSync(promptPath, "utf-8");
 }
 
@@ -66,13 +71,7 @@ export class Runner {
   ): Promise<Result<Runner>> {
     const profile = experiment.toJSON().profile;
 
-    // Create computer server
-    const computerServer = await createComputerServer(experiment, agentIndex);
-
-    // Create client for computer server
-    const [computerClient] = await createClientServerPair(computerServer);
-
-    const clients: Client[] = [computerClient];
+    const clients: Client[] = [];
 
     // Load and connect to configured MCP servers
     const mcpConfigResult = loadProfileMCPConfig(profile);
@@ -458,9 +457,17 @@ This is an automated system message and there is no user available to respond. P
     }
 
     const profile = this.experiment.toJSON().profile;
+    const problemId = this.experiment.toJSON().problem_id;
+
+    // Load problem content
+    const problemResult = getProblemContent(problemId);
+    if (problemResult.isErr()) {
+      return problemResult;
+    }
+
     const systemPrompt = loadPromptForProfile(profile).replace(
       "{{PROBLEM}}",
-      this.experiment.toJSON().problem,
+      problemResult.value,
     );
 
     const messagesForModel = await this.renderForModel(

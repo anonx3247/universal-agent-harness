@@ -15,6 +15,32 @@ export type Model =
   | MoonshotAIModel
   | DeepseekModel;
 
+export const MODELS: Record<Model, true> = {
+  "claude-opus-4-5": true,
+  "claude-sonnet-4-5": true,
+  "claude-haiku-4-5": true,
+  "gemini-3-pro-preview": true,
+  "gemini-2.5-pro": true,
+  "gemini-2.5-flash": true,
+  "gemini-2.5-flash-lite": true,
+  "gpt-5.2-pro": true,
+  "gpt-5.2": true,
+  "gpt-5.1": true,
+  "gpt-5.1-codex": true,
+  "gpt-5": true,
+  "gpt-5-codex": true,
+  "gpt-5-mini": true,
+  "gpt-5-nano": true,
+  "gpt-4.1": true,
+  "devstral-medium-latest": true,
+  "mistral-large-latest": true,
+  "mistral-small-latest": true,
+  "codestral-latest": true,
+  "kimi-k2-thinking": true,
+  "deepseek-chat": true,
+  "deepseek-reasoner": true,
+};
+
 export type provider =
   | "openai"
   | "moonshotai"

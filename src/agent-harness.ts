@@ -2,20 +2,19 @@
 
 import { Command } from "commander";
 import { readFileContent } from "./lib/fs";
-import { Err, err, SrchdError } from "./lib/error";
+import { Err, SrchdError } from "./lib/error";
 import { ExperimentResource } from "./resources/experiment";
 import { Runner } from "./runner";
-import { isArrayOf, isString, removeNulls } from "./lib/utils";
-import { buildComputerImage } from "./computer/image";
-import { computerId, Computer } from "./computer";
-import { Model, isModel, MODELS } from "./models/provider";
+import { removeNulls } from "./lib/utils";
+import { Model, MODELS } from "./models/provider";
 import { MessageResource } from "./resources/messages";
 import { db } from "./db";
 import { messages } from "./db/schema";
 import { eq } from "drizzle-orm";
-import { spawn } from "child_process";
 import { select, confirm, number, prompt } from "./lib/prompts";
 import { existsSync } from "fs";
+import { listProfiles, getDefaultProfile, profileExists } from "./lib/profiles";
+import { listProblems, problemExists, getProblemContent } from "./lib/problems";
 
 const exitWithError = (err: Err<SrchdError>) => {
   console.error(
@@ -34,11 +33,15 @@ program
   .description("Universal agent harness management CLI")
   .version("0.1.0");
 
-// Create command - interactive mode
+// Create command
 program
   .command("create [name]")
-  .description("Create a new experiment (interactive)")
-  .action(async (name?: string) => {
+  .description("Create a new experiment")
+  .option("-p, --problem <id>", "Problem ID (directory name in problems/)")
+  .option("-m, --model <model>", "AI model to use", "claude-sonnet-4-5")
+  .option("-n, --agents <count>", "Number of agents", "1")
+  .option("--profile <profile>", "Agent profile (defaults to 'example' or first available)")
+  .action(async (name?: string, options?: any) => {
     console.log("\n\x1b[1m=== Create New Experiment ===\x1b[0m\n");
 
     // Get experiment name
@@ -57,48 +60,106 @@ program
       process.exit(1);
     }
 
-    // Get problem file
-    let problemPath = await prompt("Problem file path: ");
-    while (!existsSync(problemPath)) {
-      console.log(`Error: File '${problemPath}' not found.`);
-      problemPath = await prompt("Problem file path: ");
+    // Get problem ID
+    let problemId: string;
+    if (options?.problem) {
+      problemId = options.problem;
+      // Validate problem exists
+      if (!problemExists(problemId)) {
+        console.log(`Error: Problem '${problemId}' not found.`);
+        process.exit(1);
+      }
+    } else {
+      // Get available problems
+      const problemsResult = listProblems();
+      if (problemsResult.isErr()) {
+        console.log(`Error: ${problemsResult.error.message}`);
+        console.log(`\nCreate a problem directory in ./problems/ with a problem.md file.`);
+        process.exit(1);
+      }
+      const availableProblems = problemsResult.value;
+
+      if (availableProblems.length === 0) {
+        console.log("Error: No problems found.");
+        console.log(`\nCreate a problem directory in ./problems/ with a problem.md file.`);
+        process.exit(1);
+      }
+
+      problemId = await select(
+        "Select problem:",
+        availableProblems as any,
+        availableProblems[0],
+      );
     }
 
-    const problem = await readFileContent(problemPath);
-    if (problem.isErr()) {
-      return exitWithError(problem);
+    // Get problem content for display
+    const problemResult = getProblemContent(problemId);
+    if (problemResult.isErr()) {
+      return exitWithError(problemResult);
     }
-
-    console.log(`\nProblem loaded (${problem.value.length} characters)`);
+    console.log(`\nProblem '${problemId}' loaded (${problemResult.value.length} characters)`);
 
     // Select model
-    const modelChoices = Object.keys(MODELS) as Model[];
-    const model = await select(
-      "Select AI model:",
-      modelChoices,
-      "claude-sonnet-4-5",
-    );
+    let model: Model;
+    if (options?.model) {
+      model = options.model as Model;
+    } else {
+      const modelChoices = Object.keys(MODELS) as Model[];
+      model = await select(
+        "Select AI model:",
+        modelChoices,
+        "claude-sonnet-4-5",
+      );
+    }
 
     // Get agent count
-    const agentCount = await number(
-      "Number of agents",
-      1,
-      1,
-      100,
-    );
+    let agentCount: number;
+    if (options?.agents) {
+      agentCount = parseInt(options.agents, 10);
+    } else {
+      agentCount = await number(
+        "Number of agents",
+        1,
+        1,
+        100,
+      );
+    }
 
     // Select profile
-    const validProfiles = ["research", "formal-math", "security", "arc-agi"] as const;
-    const profile = await select(
-      "Select agent profile:",
-      validProfiles,
-      "research",
-    );
+    let profile: string;
+    if (options?.profile) {
+      profile = options.profile;
+      // Validate profile exists
+      if (!profileExists(profile)) {
+        console.log(`Error: Profile '${profile}' not found.`);
+        process.exit(1);
+      }
+    } else {
+      // Get available profiles
+      const profilesResult = listProfiles();
+      if (profilesResult.isErr()) {
+        return exitWithError(profilesResult);
+      }
+      const validProfiles = profilesResult.value;
+
+      // Get default profile
+      const defaultProfileResult = getDefaultProfile();
+      if (defaultProfileResult.isErr()) {
+        return exitWithError(defaultProfileResult);
+      }
+      const defaultProfile = defaultProfileResult.value;
+
+      profile = await select(
+        "Select agent profile:",
+        validProfiles as any,
+        defaultProfile,
+      );
+    }
 
     // Create experiment
     const experiment = await ExperimentResource.create({
       name,
-      problem: problem.value,
+      problem_id: problemId,
       model,
       agent_count: agentCount,
       profile,
@@ -141,11 +202,15 @@ program
   });
 
 
-// Run command - interactive mode
+// Run command
 program
   .command("run <experiment>")
-  .description("Run agents in an experiment (interactive)")
-  .action(async (experimentName: string) => {
+  .description("Run agents in an experiment")
+  .option("--tick <agent>", "Run single tick for specific agent (0-indexed)")
+  .option("--agent <index>", "Run specific agent continuously (0-indexed)")
+  .option("--max-cost <amount>", "Maximum cost limit in dollars")
+  .option("--no-thinking", "Disable extended thinking")
+  .action(async (experimentName: string, options?: any) => {
     // Find experiment
     const experimentRes = await ExperimentResource.findByName(experimentName);
     if (experimentRes.isErr()) {
@@ -163,105 +228,79 @@ program
     const cost = await MessageResource.totalCostForExperiment(experiment);
     console.log(`  Current cost: $${cost.toFixed(4)}\n`);
 
-    // Ask run mode
-    const runMode = await select(
-      "Select run mode:",
-      ["all-continuous", "single-tick", "specific-agent"] as const,
-      "all-continuous",
-    );
-
+    // Determine run mode
     let agentIndices: number[] = [];
     let singleTick = false;
 
-    if (runMode === "single-tick") {
-      const agentIndex = await number(
-        "Which agent to run one tick?",
-        0,
-        0,
-        agentCount - 1,
-      );
+    if (options?.tick !== undefined) {
+      // Run single tick for specific agent
+      const agentIndex = parseInt(options.tick, 10);
+      if (agentIndex < 0 || agentIndex >= agentCount) {
+        console.log(`Error: Agent index must be between 0 and ${agentCount - 1}`);
+        process.exit(1);
+      }
       agentIndices = [agentIndex];
       singleTick = true;
-    } else if (runMode === "specific-agent") {
-      const agentIndex = await number(
-        "Which agent to run continuously?",
-        0,
-        0,
-        agentCount - 1,
-      );
+    } else if (options?.agent !== undefined) {
+      // Run specific agent continuously
+      const agentIndex = parseInt(options.agent, 10);
+      if (agentIndex < 0 || agentIndex >= agentCount) {
+        console.log(`Error: Agent index must be between 0 and ${agentCount - 1}`);
+        process.exit(1);
+      }
       agentIndices = [agentIndex];
     } else {
-      // All agents
-      for (let i = 0; i < agentCount; i++) {
-        agentIndices.push(i);
-      }
-    }
+      // Interactive mode or all agents
+      const runMode = await select(
+        "Select run mode:",
+        ["all-continuous", "single-tick", "specific-agent"] as const,
+        "all-continuous",
+      );
 
-    // Ask for max cost
-    const setCostLimit = await confirm("Set maximum cost limit?", false);
-    let maxCost: number | undefined;
-    if (setCostLimit) {
-      maxCost = await number("Maximum cost in dollars", 5.0, 0.01);
-    }
-
-    // Ask for thinking mode
-    const thinking = await confirm("Enable extended thinking?", true);
-
-    // Ask to copy files
-    const copyFiles = await confirm("Copy files to agent containers?", false);
-    let filePaths: string[] = [];
-    if (copyFiles) {
-      console.log("Enter file/directory paths (one per line, empty line to finish):");
-      while (true) {
-        const path = await prompt("  Path: ");
-        if (!path) break;
-        if (!existsSync(path)) {
-          console.log(`  Warning: Path '${path}' not found.`);
-          const stillAdd = await confirm("  Add anyway?", false);
-          if (!stillAdd) continue;
+      if (runMode === "single-tick") {
+        const agentIndex = await number(
+          "Which agent to run one tick?",
+          0,
+          0,
+          agentCount - 1,
+        );
+        agentIndices = [agentIndex];
+        singleTick = true;
+      } else if (runMode === "specific-agent") {
+        const agentIndex = await number(
+          "Which agent to run continuously?",
+          0,
+          0,
+          agentCount - 1,
+        );
+        agentIndices = [agentIndex];
+      } else {
+        // All agents
+        for (let i = 0; i < agentCount; i++) {
+          agentIndices.push(i);
         }
-        filePaths.push(path);
       }
     }
+
+    // Get max cost
+    let maxCost: number | undefined;
+    if (options?.maxCost !== undefined) {
+      maxCost = parseFloat(options.maxCost);
+    } else if (!singleTick) {
+      const setCostLimit = await confirm("Set maximum cost limit?", false);
+      if (setCostLimit) {
+        maxCost = await number("Maximum cost in dollars", 5.0, 0.01);
+      }
+    }
+
+    // Get thinking mode
+    const thinking = options?.thinking !== false
+      ? (options?.thinking === undefined
+          ? await confirm("Enable extended thinking?", true)
+          : true)
+      : false;
 
     console.log("\n\x1b[1mStarting experiment...\x1b[0m\n");
-
-    // Build Docker image
-    console.log(`Building Docker image for ${expData.profile} profile...`);
-    const buildRes = await buildComputerImage(expData.profile);
-    if (buildRes.isErr()) {
-      return exitWithError(buildRes);
-    }
-    console.log("Docker image built successfully.");
-
-    // Ensure computers are created
-    const imageName = `agent-computer:${expData.profile}`;
-    for (const agentIndex of agentIndices) {
-      const computerRes = await Computer.ensure(
-        computerId(experiment, agentIndex),
-        imageName,
-      );
-      if (computerRes.isErr()) {
-        return exitWithError(computerRes);
-      }
-    }
-
-    // Copy files if specified
-    if (filePaths.length > 0) {
-      console.log(`Copying ${filePaths.length} file(s) to containers...`);
-      for (const agentIndex of agentIndices) {
-        for (const pathStr of filePaths) {
-          const res = await Computer.copyToComputer(
-            computerId(experiment, agentIndex),
-            pathStr,
-          );
-          if (res.isErr()) {
-            return exitWithError(res);
-          }
-        }
-      }
-      console.log("Files copied successfully.");
-    }
 
     // Build runners for all agents
     const builders = await Promise.all(
@@ -277,7 +316,7 @@ program
       }
     }
     const runners = removeNulls(
-      builders.map((res) => {
+      builders.map((res: any) => {
         if (res.isOk()) {
           return res.value;
         }
@@ -288,14 +327,12 @@ program
     // Run single tick if specified
     if (singleTick) {
       console.log(`\nRunning single tick for agent ${agentIndices[0]}...\n`);
-      const tickResults = await Promise.all(runners.map((r) => r.tick()));
+      const tickResults = await Promise.all(runners.map((r: any) => r.tick()));
       for (const tick of tickResults) {
         if (tick.isErr()) {
           return exitWithError(tick);
         }
       }
-      // Stop containers after single tick
-      await Computer.stopByExperiment(experimentName);
       console.log("\n\x1b[32m✓ Single tick completed.\x1b[0m\n");
       return;
     }
@@ -310,30 +347,13 @@ program
     let tickCount = 0;
     let lastCost = await MessageResource.totalCostForExperiment(experiment);
 
-    // Fast shutdown - spawn background process to stop containers and exit immediately
+    // Fast shutdown - exit cleanly
     const fastShutdown = (reason: string) => {
       console.log(`\n\x1b[33m${reason}\x1b[0m`);
-      console.log("Stopping containers in background...");
 
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
-
-      // Spawn detached process to stop containers in background
-      const child = spawn(
-        process.execPath,
-        [
-          "-e",
-          `require("${__dirname}/computer").Computer.stopByExperiment("${experimentName}").then(() => process.exit(0))`,
-        ],
-        {
-          detached: true,
-          stdio: "ignore",
-          cwd: process.cwd(),
-          env: process.env,
-        },
-      );
-      child.unref();
 
       process.exit(0);
     };
@@ -355,10 +375,10 @@ program
     }
 
     // Display instructions
-    console.log("\n\x1b[36mPress 'q' to quit (containers will be stopped in background, data preserved)\x1b[0m\n");
+    console.log("\n\x1b[36mPress 'q' to quit\x1b[0m\n");
 
     // For continuous running, start each agent in its own independent loop
-    const runnerPromises = runners.map(async (runner) => {
+    const runnerPromises = runners.map(async (runner: any) => {
       while (true) {
         if (maxCost && shouldCheck(tickCount, lastCost, maxCost)) {
           lastCost = await MessageResource.totalCostForExperiment(experiment);
@@ -402,16 +422,8 @@ program
 
     console.log(`\n\x1b[1m=== Clean Experiment: ${experimentName} ===\x1b[0m\n`);
 
-    const cleanMode = await select(
-      "What to clean?",
-      ["everything", "containers-only"] as const,
-      "everything",
-    );
-
     const confirmed = await confirm(
-      cleanMode === "everything"
-        ? "Delete experiment and all data (including containers)?"
-        : "Delete only Docker containers (keep database)?",
+      "Delete experiment and all data?",
       false,
     );
 
@@ -420,24 +432,7 @@ program
       return;
     }
 
-    if (cleanMode === "containers-only") {
-      console.log(`\nDeleting Docker containers for '${experimentName}'...`);
-      const terminateRes = await Computer.terminateByExperiment(experimentName);
-      if (terminateRes.isErr()) {
-        return exitWithError(terminateRes);
-      }
-      console.log(`\x1b[32m✓ Deleted ${terminateRes.value} container(s).\x1b[0m\n`);
-      return;
-    }
-
     console.log(`\nDeleting experiment '${experimentName}'...`);
-
-    // Delete Docker containers first
-    console.log("  Deleting Docker containers...");
-    const terminateRes = await Computer.terminateByExperiment(experimentName);
-    if (terminateRes.isOk()) {
-      console.log(`    Deleted ${terminateRes.value} container(s).`);
-    }
 
     // Delete messages
     console.log("  Deleting messages...");

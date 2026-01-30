@@ -4,36 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Universal Agent Harness** is a simplified multi-agent orchestration system derived from msrchd. It runs one or many AI agents in isolated Docker containers, providing them with a computer tool for executing commands and reading/writing files. The key difference from msrchd is the removal of the publication/peer review system and support for connecting to arbitrary MCP servers with configurable authentication.
+**Universal Agent Harness** is a multi-agent orchestration system that runs AI agents with configurable MCP (Model Context Protocol) servers. It provides both a library API and CLI for creating and managing agent experiments.
 
 ## Core Architecture
 
 ### Agent Execution Model
 
 - **Tick-based execution**: Each agent runs in an independent async loop, processing one "tick" per iteration
-- **Runner orchestration** (`src/runner/index.ts`): The Runner class manages agent lifecycles, message history, and tool execution
-- **Isolated containers**: Each agent runs in a Docker container with its own filesystem at `/home/agent/`
-- **Resource limits**: 512MB RAM, 1 vCPU per container
+- **Runner orchestration** (`src/runner/index.ts`): The Runner class manages agent lifecycles, message history, and tool execution via MCP servers
+- **MCP Integration**: Agents connect to configured MCP servers to access tools and capabilities
 
 ### Key Components
 
 ```
 src/
-├── agent-harness.ts      # CLI entry point (commands: create, run, clean, list, serve)
+├── index.ts              # Library API exports
+├── agent-harness.ts      # CLI entry point (commands: create, run, clean, list)
 ├── runner/               # Core agent execution orchestration
 │   ├── index.ts          # Runner class - manages agent ticks and tool calls
 │   └── config.ts         # RunConfig type definitions
 ├── models/               # LLM provider integrations (Anthropic, OpenAI, Gemini, Mistral, etc.)
-├── tools/                # MCP tool servers
-│   ├── computer.ts       # Docker container bash execution
-│   └── index.ts          # Tool exports
-├── computer/             # Docker container management
-│   ├── index.ts          # Container creation & lifecycle
-│   └── image.ts          # Docker image building
+├── tools/                # Reserved for future tool integrations
+│   └── index.ts          # Tool exports (currently empty)
 ├── db/                   # SQLite database with Drizzle ORM
 │   ├── index.ts          # DB connection
 │   └── schema.ts         # Schema: experiments, messages
 └── lib/                  # Utilities (error handling, async, fs, mcp)
+    ├── mcp.ts            # MCP client/server utilities
+    └── mcp-config.ts     # MCP configuration loading
 ```
 
 ### Database Schema
@@ -43,23 +41,18 @@ The database uses SQLite with Drizzle ORM:
 - **experiments**: Stores experiment metadata (name, problem, model, agent_count, profile)
 - **messages**: Stores agent conversation history with token counts and costs
 
-**Note**: The publication system tables (publications, citations, reviews, solutions) have been removed.
-
 ### MCP Server Configuration
 
-Agents connect to MCP servers defined in configuration. Each server can specify:
-- Server command/path
-- Environment variables (tokens, API keys)
-- Connection method (stdio, SSE, etc.)
-- Tool filtering/allowlisting
+Agents connect to MCP servers defined in `profiles/{profile}/settings.json`:
 
-The computer tool is always provided by default via the built-in computer MCP server.
+All tools are provided via configured MCP servers in the profile's `settings.json` file.
 
 ## Development Commands
 
 ### Setup
 ```bash
 npm install                    # Install dependencies
+npx drizzle-kit generate       # Generate migrations
 npx drizzle-kit migrate        # Run database migrations
 ```
 
@@ -69,31 +62,64 @@ npm run typecheck              # Run TypeScript type checking
 npm run lint                   # Run ESLint on src/
 ```
 
-### Database Operations
+### Running with tsx
+The project uses tsx for development (no build needed):
+
 ```bash
-npx drizzle-kit generate       # Generate new migration from schema changes
-npx drizzle-kit migrate        # Apply pending migrations
+# CLI usage
+npx tsx src/agent-harness.ts create my-exp -p problem.txt -m claude-sonnet-4-5
+npx tsx src/agent-harness.ts run my-exp --tick 0
+
+# Library usage
+npx tsx example.ts
 ```
 
-### Running the CLI
+## Library API
+
+The main library exports are in `src/index.ts`:
+
+```typescript
+import { createExperiment, runExperiment } from "./src/index";
+
+// Create experiment
+const exp = await createExperiment({
+  name: "test",
+  problem: "Solve this problem...",
+  model: "claude-sonnet-4-5",
+  agentCount: 1,
+  profile: "example"
+});
+
+// Run experiment
+await runExperiment({
+  experimentName: "test",
+  singleTick: true
+});
+```
+
+## CLI Usage
+
 ```bash
-# Create an experiment
-npx tsx src/agent-harness.ts create <name> -p problem.txt -n 3 -m claude-sonnet-4-5
+# Create experiment (non-interactive)
+npx tsx src/agent-harness.ts create <name> -p problem.txt -m claude-sonnet-4-5 -n 1 --profile example
 
-# Run agents
-npx tsx src/agent-harness.ts run <experiment> --max-cost 5.0
+# Create experiment (interactive)
+npx tsx src/agent-harness.ts create
 
-# Run single agent tick (for debugging)
+# Run single tick
 npx tsx src/agent-harness.ts run <experiment> --tick 0
 
-# Start web UI
-npx tsx src/agent-harness.ts serve
+# Run specific agent continuously
+npx tsx src/agent-harness.ts run <experiment> --agent 0
+
+# Run with cost limit
+npx tsx src/agent-harness.ts run <experiment> --max-cost 5.0
 
 # List experiments
 npx tsx src/agent-harness.ts list
 
-# Clean up experiment
-npx tsx src/agent-harness.ts clean <experiment> -y
+# Clean up
+npx tsx src/agent-harness.ts clean <experiment>
 ```
 
 ## Key Design Patterns
@@ -109,14 +135,15 @@ if (!result.success) {
 const data = result.data;
 ```
 
-### MCP Client-Server Pairs
-Each agent gets MCP servers connected via in-memory transport:
-- Built-in computer server (always present)
-- Additional configured MCP servers (from config)
+### MCP Client-Server Architecture
+Each agent connects to MCP servers defined in the profile's `settings.json`:
+- MCP servers can be stdio-based (spawned processes) or SSE-based (HTTP endpoints)
+- Each server provides tools that become available to the agent
+- Tool names are prefixed with the server name (e.g., `filesystem-read_file`)
 
 Tool calls go through the MCP protocol:
 1. Runner receives tool calls from LLM
-2. Finds matching tool in MCP clients
+2. Finds matching tool in configured MCP clients
 3. Calls tool via MCP protocol
 4. Returns result to LLM as user message
 
@@ -126,28 +153,11 @@ Messages are pruned to fit within model context windows. The Runner:
 2. Drops older messages when approaching token limit
 3. Never drops the most recent user/assistant exchange
 
-### Docker Container Management
-Containers are created once per agent and reused across runs:
-- Data persists in Docker volumes
-- Containers stopped between runs to save resources
-- `--path` flag copies files to containers before running
+## MCP Server Configuration
 
-## Critical Implementation Notes
+### Configuration Format
 
-### Removing Publication System Components
-When adapting from msrchd, these components were removed:
-- `src/tools/publications.ts` - All publication/review tools
-- `src/resources/publication.ts`, `solutions.ts` - Publication database resources
-- Database tables: publications, citations, reviews, solutions
-- `/publications/` filesystem directory
-
-### Configurable MCP Servers
-
-The system supports connecting to external MCP servers via configuration in profile `settings.json` files.
-
-#### Configuration Format
-
-Create a `settings.json` file in any profile directory (e.g., `profiles/research/settings.json`):
+Create a `settings.json` file in any profile directory (e.g., `profiles/example/settings.json`):
 
 ```json
 {
@@ -166,7 +176,7 @@ Create a `settings.json` file in any profile directory (e.g., `profiles/research
 }
 ```
 
-#### Configuration Fields
+### Configuration Fields
 
 - **name**: Server identifier (used for tool prefixing)
 - **transport**: Connection type - `"stdio"` or `"sse"`
@@ -177,13 +187,13 @@ Create a `settings.json` file in any profile directory (e.g., `profiles/research
 - **token**: Authentication token (SSE only)
 - **enabled**: Whether to load this server (default: true)
 
-#### Environment Variable Substitution
+### Environment Variable Substitution
 
 Use `${VAR_NAME}` syntax to reference environment variables:
 - `"${GITHUB_TOKEN}"` → value of `GITHUB_TOKEN` env var
 - Works in: command, url, args, env values, token
 
-#### Example Configurations
+### Example Configurations
 
 **Filesystem Server (stdio)**:
 ```json
@@ -221,7 +231,7 @@ Use `${VAR_NAME}` syntax to reference environment variables:
 }
 ```
 
-#### Server Loading
+### Server Loading
 
 1. Runner reads profile's `settings.json` during initialization
 2. Processes environment variable substitutions
@@ -229,22 +239,15 @@ Use `${VAR_NAME}` syntax to reference environment variables:
 4. Continues if individual servers fail to connect (with warning)
 5. Tools from all servers become available to agent
 
-### Agent Profiles
+## Agent Profiles
+
 Profiles define agent behavior via:
-- `prompt.md` - System prompt instructions
-- `Dockerfile` - Optional custom container image
+- `prompt.md` - System prompt instructions (required)
 - `settings.json` - MCP server configurations (optional)
 
-Default profiles: research, formal-math, security, arc-agi
+Default profile: **example**
 
-## Testing Approach
-
-To test a single agent tick:
-```bash
-npx tsx src/agent-harness.ts run <experiment> --tick 0
-```
-
-This runs one iteration for agent 0 and exits, useful for debugging tool calls and responses.
+Each profile directory lives in `profiles/{profile-name}/` and must contain at minimum a `prompt.md` file.
 
 ## Cost Tracking
 
@@ -253,7 +256,7 @@ Every LLM call tracks:
 - Cost (calculated from provider pricing)
 - Stored in messages table
 
-Use `--max-cost` flag to stop execution when total cost exceeds threshold.
+When running experiments, you can set a maximum cost limit to automatically stop execution when the threshold is exceeded.
 
 ## Supported LLM Providers
 

@@ -20,9 +20,9 @@ export const experiments = sqliteTable(
       .$defaultFn(() => new Date()),
 
     name: text("name").notNull(),
-    problem: text("problem").notNull(),
+    problem_id: text("problem_id").notNull(),
 
-    profile: text("profile").notNull().default("research"),
+    profile: text("profile").notNull().default("example"),
     model: text("model").$type<Model>().notNull(),
     agent_count: integer("agent_count").notNull().default(0),
   },
