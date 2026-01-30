@@ -155,7 +155,7 @@ export class MistralLLM extends LLM {
     return mistralMessages;
   }
 
-  async run(
+  async generate(
     messages: Message[],
     prompt: string,
     tools: Tool[],
@@ -257,7 +257,7 @@ export class MistralLLM extends LLM {
         tokenUsage,
       });
     } catch (error) {
-      return err("model_error", "Failed to run model", error);
+      return err("model_error", "Failed to generate model response", error);
     }
   }
 

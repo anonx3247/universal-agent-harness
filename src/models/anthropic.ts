@@ -172,7 +172,7 @@ export class AnthropicLLM extends LLM {
     return anthropicMessages;
   }
 
-  async run(
+  async generate(
     messages: Message[],
     prompt: string,
     tools: Tool[],
@@ -284,7 +284,7 @@ export class AnthropicLLM extends LLM {
         tokenUsage, // also inlcude cached or input tokens ?
       });
     } catch (error) {
-      return err("model_error", "Failed to run model", error);
+      return err("model_error", "Failed to generate model response", error);
     }
   }
 

@@ -8,8 +8,8 @@ import {
 import { Message } from "@app/models";
 import { Model } from "@app/models/provider";
 
-export const experiments = sqliteTable(
-  "experiments",
+export const runs = sqliteTable(
+  "runs",
   {
     id: integer("id").primaryKey(),
     created: integer("created", { mode: "timestamp" })
@@ -40,9 +40,9 @@ export const messages = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
 
-    experiment: integer("experiment")
+    run: integer("run")
       .notNull()
-      .references(() => experiments.id),
+      .references(() => runs.id),
     agent: integer("agent").notNull(),
 
     position: integer("position").notNull(),
@@ -58,5 +58,5 @@ export const messages = sqliteTable(
     total_tokens: integer("total_tokens").notNull().default(0),
     cost: real("cost").notNull().default(0),
   },
-  (t) => [unique().on(t.experiment, t.agent, t.position)],
+  (t) => [unique().on(t.run, t.agent, t.position)],
 );

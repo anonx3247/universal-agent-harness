@@ -8,7 +8,7 @@ import {
   ToolResult,
   ToolUse,
 } from "@app/models";
-import { ExperimentResource } from "@app/resources/experiment";
+import { RunResource } from "@app/resources/run";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { withRetries, Result, err, ok } from "@app/lib/error";
 import { MessageResource } from "@app/resources/messages";
@@ -35,7 +35,7 @@ function loadPromptForProfile(profile: string): string {
 }
 
 export class Runner {
-  private experiment: ExperimentResource;
+  private run: RunResource;
   private agentIndex: number;
   private mcpClients: Client[];
   private model: LLM;
@@ -47,12 +47,12 @@ export class Runner {
   private messages: MessageResource[]; // ordered by position asc
 
   private constructor(
-    experiment: ExperimentResource,
+    run: RunResource,
     agentIndex: number,
     mcpClients: Client[],
     model: LLM,
   ) {
-    this.experiment = experiment;
+    this.run = run;
     this.agentIndex = agentIndex;
     this.mcpClients = mcpClients;
     this.model = model;
@@ -65,11 +65,11 @@ export class Runner {
   }
 
   public static async builder(
-    experiment: ExperimentResource,
+    run: RunResource,
     agentIndex: number,
     config: RunConfig,
   ): Promise<Result<Runner>> {
-    const profile = experiment.toJSON().profile;
+    const profile = run.toJSON().profile;
 
     const clients: Client[] = [];
 
@@ -98,12 +98,12 @@ export class Runner {
       }
     }
 
-    const model = createLLM(experiment.toJSON().model, {
+    const model = createLLM(run.toJSON().model, {
       thinking: config.thinking,
     });
 
     const runner = await Runner.initialize(
-      experiment,
+      run,
       agentIndex,
       clients,
       model,
@@ -116,20 +116,20 @@ export class Runner {
   }
 
   public static async initialize(
-    experiment: ExperimentResource,
+    run: RunResource,
     agentIndex: number,
     mcpClients: Client[],
     model: LLM,
   ): Promise<Result<Runner>> {
     const runner = new Runner(
-      experiment,
+      run,
       agentIndex,
       mcpClients,
       model,
     );
 
     const messages = await MessageResource.listMessagesByAgent(
-      runner.experiment,
+      runner.run,
       runner.agentIndex,
     );
 
@@ -251,7 +251,7 @@ This is an automated system message and there is no user available to respond. P
     };
 
     const message = await MessageResource.create(
-      this.experiment,
+      this.run,
       this.agentIndex,
       m,
       position,
@@ -456,8 +456,8 @@ This is an automated system message and there is no user available to respond. P
       this.messages.push(newMessage.value);
     }
 
-    const profile = this.experiment.toJSON().profile;
-    const problemId = this.experiment.toJSON().problem_id;
+    const profile = this.run.toJSON().profile;
+    const problemId = this.run.toJSON().problem_id;
 
     // Load problem content
     const problemResult = getProblemContent(problemId);
@@ -479,7 +479,7 @@ This is an automated system message and there is no user available to respond. P
     }
 
     const res = await withRetries(async () => {
-      return this.model.run(messagesForModel.value, systemPrompt, tools.value);
+      return this.model.generate(messagesForModel.value, systemPrompt, tools.value);
     })({});
     if (res.isErr()) {
       return res;
@@ -509,7 +509,7 @@ This is an automated system message and there is no user available to respond. P
     const cost = tokenUsage ? this.model.cost([tokenUsage]) : 0;
 
     const agentMessage = await MessageResource.create(
-      this.experiment,
+      this.run,
       this.agentIndex,
       message,
       last.position() + 1,
@@ -524,7 +524,7 @@ This is an automated system message and there is no user available to respond. P
 
     if (toolResults.length > 0) {
       const toolResultsMessage = await MessageResource.create(
-        this.experiment,
+        this.run,
         this.agentIndex,
         {
           role: "user",

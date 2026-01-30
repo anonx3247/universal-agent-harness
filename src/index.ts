@@ -6,18 +6,17 @@
  * MCP (Model Context Protocol) servers for various capabilities.
  */
 
-import { ExperimentResource } from "./resources/experiment";
+import { RunResource } from "./resources/run";
 import { MessageResource } from "./resources/messages";
 import { Runner } from "./runner";
 import { Model } from "./models/provider";
-import { MCPServerConfig } from "./lib/mcp-config";
-import { Result } from "./lib/error";
+import { Result, ok, err } from "./lib/error";
 
 /**
- * Configuration for creating a new experiment
+ * Configuration for creating a new run
  */
-export interface CreateExperimentConfig {
-  /** Unique name for the experiment */
+export interface CreateRunConfig {
+  /** Unique name for the run */
   name: string;
   /** Problem ID (directory name in problems/) */
   problemId: string;
@@ -30,11 +29,11 @@ export interface CreateExperimentConfig {
 }
 
 /**
- * Configuration for running an experiment
+ * Configuration for running (starting or continuing) a run
  */
-export interface RunExperimentConfig {
-  /** Name of the experiment to run */
-  experimentName: string;
+export interface RunConfig {
+  /** Name of the run to continue */
+  runName: string;
   /** Optional: Run only specific agent (0-indexed) */
   agentIndex?: number;
   /** Optional: Run only one tick instead of continuous */
@@ -50,12 +49,12 @@ export interface RunExperimentConfig {
 }
 
 /**
- * Create a new experiment
+ * Create a new run
  *
  * @example
  * ```typescript
- * const experiment = await createExperiment({
- *   name: "my-experiment",
+ * const run = await createRun({
+ *   name: "my-run",
  *   problemId: "factorial-problem",
  *   model: "claude-sonnet-4-5",
  *   agentCount: 1,
@@ -63,49 +62,53 @@ export interface RunExperimentConfig {
  * });
  * ```
  */
-export async function createExperiment(
-  config: CreateExperimentConfig
-): Promise<ExperimentResource> {
-  const experiment = await ExperimentResource.create({
-    name: config.name,
-    problem_id: config.problemId,
-    model: config.model,
-    agent_count: config.agentCount ?? 1,
-    profile: config.profile ?? "example",
-  });
+export async function createRun(
+  config: CreateRunConfig
+): Promise<Result<RunResource>> {
+  try {
+    const run = await RunResource.create({
+      name: config.name,
+      problem_id: config.problemId,
+      model: config.model,
+      agent_count: config.agentCount ?? 1,
+      profile: config.profile ?? "example",
+    });
 
-  return experiment;
+    return ok(run);
+  } catch (error: any) {
+    return err("resource_creation_error", error?.message || "Failed to create run", error);
+  }
 }
 
 /**
- * Run an experiment
+ * Continue a run
  *
  * @example
  * ```typescript
- * await runExperiment({
- *   experimentName: "my-experiment",
+ * await run({
+ *   runName: "my-run",
  *   singleTick: true,
  *   onMessage: (msg) => console.log("Agent:", msg)
  * });
  * ```
  */
-export async function runExperiment(
-  config: RunExperimentConfig
-): Promise<Result<void>> {
-  // Find experiment
-  const experimentRes = await ExperimentResource.findByName(config.experimentName);
-  if (experimentRes.isErr()) {
-    return experimentRes;
+export async function run(
+  config: RunConfig
+): Promise<Result<{ cost: number } | void>> {
+  // Find run
+  const runRes = await RunResource.findByName(config.runName);
+  if (runRes.isErr()) {
+    return runRes;
   }
-  const experiment = experimentRes.value;
-  const expData = experiment.toJSON();
+  const run = runRes.value;
+  const runData = run.toJSON();
 
   // Determine which agents to run
   const agentIndices: number[] = [];
   if (config.agentIndex !== undefined) {
     agentIndices.push(config.agentIndex);
   } else {
-    for (let i = 0; i < expData.agent_count; i++) {
+    for (let i = 0; i < runData.agent_count; i++) {
       agentIndices.push(i);
     }
   }
@@ -113,7 +116,7 @@ export async function runExperiment(
   // Build runners
   const builderResults = await Promise.all(
     agentIndices.map((agentIndex) =>
-      Runner.builder(experiment, agentIndex, {
+      Runner.builder(run, agentIndex, {
         thinking: config.thinking ?? true,
       })
     )
@@ -138,18 +141,22 @@ export async function runExperiment(
         return tick;
       }
     }
-    return { isOk: () => true, isErr: () => false, value: undefined } as any;
+
+    // Calculate total cost
+    const totalCost = await MessageResource.totalCostForRun(run);
+
+    return ok({ cost: totalCost });
   }
 
   // Run continuously
   let tickCount = 0;
-  let lastCost = await MessageResource.totalCostForExperiment(experiment);
+  let lastCost = await MessageResource.totalCostForRun(run);
 
   const runnerPromises = runners.map(async (runner: any) => {
     while (true) {
       // Check cost limit
       if (config.maxCost && tickCount % 20 === 0) {
-        lastCost = await MessageResource.totalCostForExperiment(experiment);
+        lastCost = await MessageResource.totalCostForRun(run);
         if (config.onCostUpdate) {
           config.onCostUpdate(lastCost);
         }
@@ -167,60 +174,60 @@ export async function runExperiment(
   });
 
   await Promise.all(runnerPromises);
-  return { isOk: () => true, isErr: () => false, value: undefined } as any;
+  return { success: true, data: undefined };
 }
 
 /**
- * Get experiment by name
+ * Get run by name
  */
-export async function getExperiment(
+export async function getRun(
   name: string
-): Promise<Result<ExperimentResource>> {
-  return await ExperimentResource.findByName(name);
+): Promise<Result<RunResource>> {
+  return await RunResource.findByName(name);
 }
 
 /**
- * List all experiments
+ * List all runs
  */
-export async function listExperiments(): Promise<ExperimentResource[]> {
-  return await ExperimentResource.all();
+export async function listRuns(): Promise<RunResource[]> {
+  return await RunResource.all();
 }
 
 /**
- * Get total cost for an experiment
+ * Get total cost for a run
  */
-export async function getExperimentCost(
-  experiment: ExperimentResource
+export async function getRunCost(
+  run: RunResource
 ): Promise<number> {
-  return await MessageResource.totalCostForExperiment(experiment);
+  return await MessageResource.totalCostForExperiment(run);
 }
 
 /**
- * Get total tokens for an experiment
+ * Get total tokens for a run
  */
-export async function getExperimentTokens(
-  experiment: ExperimentResource
+export async function getRunTokens(
+  run: RunResource
 ): Promise<number> {
-  return await MessageResource.totalTokensForExperiment(experiment);
+  return await MessageResource.totalTokensForExperiment(run);
 }
 
 /**
- * Delete an experiment and all its data
+ * Delete a run and all its data
  */
-export async function deleteExperiment(name: string): Promise<Result<void>> {
-  const experimentRes = await ExperimentResource.findByName(name);
-  if (experimentRes.isErr()) {
-    return experimentRes;
+export async function deleteRun(name: string): Promise<Result<void>> {
+  const runRes = await RunResource.findByName(name);
+  if (runRes.isErr()) {
+    return runRes;
   }
 
-  const experiment = experimentRes.value;
-  await experiment.delete();
+  const run = runRes.value;
+  await run.delete();
 
   return { isOk: () => true, isErr: () => false, value: undefined } as any;
 }
 
 // Re-export types and utilities
-export { ExperimentResource } from "./resources/experiment";
+export { RunResource } from "./resources/run";
 export { MessageResource } from "./resources/messages";
 export { Runner } from "./runner";
 

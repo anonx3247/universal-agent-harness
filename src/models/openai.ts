@@ -177,7 +177,7 @@ export class OpenAILLM extends LLM {
     return inputItems;
   }
 
-  async run(
+  async generate(
     messages: Message[],
     prompt: string,
     tools: Tool[],
@@ -277,7 +277,7 @@ export class OpenAILLM extends LLM {
         tokenUsage,
       });
     } catch (error) {
-      return err("model_error", "Failed to run model", error);
+      return err("model_error", "Failed to generate model response", error);
     }
   }
 

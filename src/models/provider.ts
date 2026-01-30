@@ -5,6 +5,7 @@ import { isMistralModel, MistralModel, MistralLLM } from "./mistral";
 import { isMoonshotAIModel, MoonshotAIModel, MoonshotAILLM } from "./moonshotai";
 import { isDeepseekModel, DeepseekModel, DeepseekLLM } from "./deepseek";
 import { isOpenAIModel, OpenAIModel, OpenAILLM } from "./openai";
+import { isRedPillModel, RedPillModel, RedPillLLM } from "./redpill";
 import { LLM, ModelConfig } from "./index";
 
 export type Model =
@@ -13,7 +14,8 @@ export type Model =
   | OpenAIModel
   | MistralModel
   | MoonshotAIModel
-  | DeepseekModel;
+  | DeepseekModel
+  | RedPillModel;
 
 export const MODELS: Record<Model, true> = {
   "claude-opus-4-5": true,
@@ -39,6 +41,10 @@ export const MODELS: Record<Model, true> = {
   "kimi-k2-thinking": true,
   "deepseek-chat": true,
   "deepseek-reasoner": true,
+  "kimi-k2.5": true,
+  "glm-4.7": true,
+  "llama-3.3-70b-instruct": true,
+  "qwen-2.5-7b-instruct": true,
 };
 
 export type provider =
@@ -47,7 +53,8 @@ export type provider =
   | "deepseek"
   | "anthropic"
   | "gemini"
-  | "mistral";
+  | "mistral"
+  | "redpill";
 
 export function isProvider(str: string): str is provider {
   return [
@@ -57,6 +64,7 @@ export function isProvider(str: string): str is provider {
     "mistral",
     "moonshotai",
     "deepseek",
+    "redpill",
   ].includes(str);
 }
 
@@ -67,7 +75,8 @@ export function isModel(model: string): model is Model {
     isGeminiModel(model) ||
     isMistralModel(model) ||
     isMoonshotAIModel(model) ||
-    isDeepseekModel(model)
+    isDeepseekModel(model) ||
+    isRedPillModel(model)
   );
 }
 
@@ -78,7 +87,8 @@ export function providerFromModel(
     | AnthropicModel
     | GeminiModel
     | MistralModel
-    | DeepseekModel,
+    | DeepseekModel
+    | RedPillModel,
 ): provider {
   if (isOpenAIModel(model)) return "openai";
   if (isMoonshotAIModel(model)) return "moonshotai";
@@ -86,6 +96,7 @@ export function providerFromModel(
   if (isGeminiModel(model)) return "gemini";
   if (isMistralModel(model)) return "mistral";
   if (isDeepseekModel(model)) return "deepseek";
+  if (isRedPillModel(model)) return "redpill";
   else assertNever(model);
 }
 
@@ -107,6 +118,8 @@ export function createLLM(model: Model, config?: ModelConfig): LLM {
     return new MoonshotAILLM(config, model);
   } else if (isDeepseekModel(model)) {
     return new DeepseekLLM(config, model);
+  } else if (isRedPillModel(model)) {
+    return new RedPillLLM(config, model);
   } else {
     assertNever(model);
   }

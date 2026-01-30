@@ -64,7 +64,7 @@ export abstract class LLM {
     this.config = config;
   }
 
-  abstract run(
+  abstract generate(
     messages: Message[],
     prompt: string,
     tools: Tool[],

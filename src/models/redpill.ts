@@ -2,21 +2,48 @@ import {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
 } from "openai/resources/chat";
-import { LLM, ModelConfig, Message, Tool, TokenUsage } from "./index";
+import {
+  LLM,
+  ModelConfig,
+  Message,
+  Tool,
+  TokenUsage,
+} from "./index";
+import { PreTrainedTokenizer } from "@huggingface/transformers";
 
 import OpenAI from "openai";
 import { Result, err, ok } from "@app/lib/error";
 import { assertNever } from "@app/lib/assert";
 import { removeNulls } from "@app/lib/utils";
-import { convertThinking } from "./openai";
 import { CompletionUsage } from "openai/resources/completions";
 
-export type MoonshotAIModel = "kimi-k2-thinking";
-export function isMoonshotAIModel(model: string): model is MoonshotAIModel {
-  return ["kimi-k2-thinking"].includes(model);
+export type RedPillModel =
+  | "kimi-k2.5"
+  | "glm-4.7"
+  | "llama-3.3-70b-instruct"
+  | "qwen-2.5-7b-instruct";
+
+export function isRedPillModel(model: string): model is RedPillModel {
+  return [
+    "kimi-k2.5",
+    "glm-4.7",
+    "llama-3.3-70b-instruct",
+    "qwen-2.5-7b-instruct",
+  ].includes(model);
 }
 
-type MoonshotAITokenPrices = {
+// Map our model names to RedPill API format (with provider prefix)
+function getRedPillAPIModelName(model: RedPillModel): string {
+  const mapping: Record<RedPillModel, string> = {
+    "kimi-k2.5": "moonshotai/kimi-k2.5",
+    "glm-4.7": "zhipuai/glm-4",
+    "llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct",
+    "qwen-2.5-7b-instruct": "phala/qwen-2.5-7b-instruct",
+  };
+  return mapping[model];
+}
+
+type RedPillTokenPrices = {
   input: number;
   cacheHits: number;
   output: number;
@@ -25,32 +52,33 @@ type MoonshotAITokenPrices = {
 function normalizeTokenPrices(
   costPerMillionInputTokens: number,
   costPerMillionOutputTokens: number,
-  costPerMillionCacheTokens: number,
-): MoonshotAITokenPrices {
+  costPerMillionCacheTokens?: number,
+): RedPillTokenPrices {
   return {
     input: costPerMillionInputTokens / 1_000_000,
     output: costPerMillionOutputTokens / 1_000_000,
-    cacheHits: costPerMillionCacheTokens / 1_000_000,
+    cacheHits: (costPerMillionCacheTokens ?? costPerMillionInputTokens * 0.1) / 1_000_000,
   };
 }
 
-// https://platform.moonshot.ai/docs/pricing/chat#product-pricing
-const TOKEN_PRICING: Record<MoonshotAIModel, MoonshotAITokenPrices> = {
-  "kimi-k2-thinking": normalizeTokenPrices(0.6, 2.5, 0.15),
+// Pricing from https://www.redpill.ai/models (as of 2025-01-30)
+// Note: Cache pricing not available, defaulting to 10% of input price
+const TOKEN_PRICING: Record<RedPillModel, RedPillTokenPrices> = {
+  "kimi-k2.5": normalizeTokenPrices(0.60, 3.00, 0.06),
+  "glm-4.7": normalizeTokenPrices(0.85, 3.30, 0.085),
+  "llama-3.3-70b-instruct": normalizeTokenPrices(2.00, 2.00, 0.20),
+  "qwen-2.5-7b-instruct": normalizeTokenPrices(0.04, 0.10, 0.004),
 };
 
-export class MoonshotAILLM extends LLM {
+export class RedPillLLM extends LLM {
   private client: OpenAI;
-  private model: MoonshotAIModel;
+  private model: RedPillModel;
 
-  constructor(
-    config: ModelConfig,
-    model: MoonshotAIModel = "kimi-k2-thinking",
-  ) {
+  constructor(config: ModelConfig, model: RedPillModel = "llama-3.3-70b-instruct") {
     super(config);
     this.client = new OpenAI({
-      apiKey: process.env.MOONSHOTAI_API_KEY,
-      baseURL: "https://api.moonshot.ai/v1",
+      apiKey: process.env.REDPILL_API_KEY,
+      baseURL: "https://api.redpill.ai/v1",
     });
     this.model = model;
   }
@@ -125,21 +153,24 @@ export class MoonshotAILLM extends LLM {
     try {
       const input = this.messages(prompt, messages);
 
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: input,
-        tool_choice: "auto",
-        reasoning_effort: convertThinking(this.config.thinking),
-        tools: tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.inputSchema as any,
-          },
-          strict: false,
-        })),
-      });
+      const response = await this.client.chat.completions.create(
+        {
+          model: getRedPillAPIModelName(this.model),
+          messages: input,
+          ...(tools.length > 0 && {
+            tool_choice: "auto",
+            tools: tools.map((tool) => ({
+              type: "function",
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.inputSchema as any,
+              },
+            })),
+          }),
+        },
+        {},
+      );
 
       const message = response.choices[0].message;
       const textContent = message.content;
@@ -178,13 +209,21 @@ export class MoonshotAILLM extends LLM {
                 name: toolCall.function.name,
                 input: JSON.parse(toolCall.function.arguments),
                 provider: {
-                  moonshotai: {
+                  redpill: {
                     id: toolCall.id,
                   },
                 },
               };
             }),
         );
+      }
+
+      if (!textContent && !toolCalls) {
+        output.push({
+          type: "text" as const,
+          text: "",
+          provider: null,
+        });
       }
 
       const tokenUsage = response.usage
@@ -228,58 +267,25 @@ export class MoonshotAILLM extends LLM {
     prompt: string,
     tools: Tool[],
   ): Promise<Result<number>> {
-    try {
-      const input = this.messages(prompt, messages);
+    // Simple token estimation: ~4 chars per token
+    const str = [messages, prompt, tools]
+      .map((x) => JSON.stringify(x))
+      .reduce((acc, cur) => acc + cur);
 
-      const response = await fetch(
-        "https://api.moonshot.ai/v1/tokenizers/estimate-token-count",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.MOONSHOTAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: this.model,
-            messages: input,
-            tools: tools.map((tool) => ({
-              type: "function",
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.inputSchema as any,
-              },
-              strict: false,
-            })),
-            toolChoice: "auto",
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const error = await response.text();
-        return err(
-          "model_error",
-          "Failed to estimate token count",
-          new Error(error),
-        );
-      }
-
-      const data = await response.json();
-      return ok(data.data.total_tokens);
-    } catch (error) {
-      return err(
-        "model_error",
-        "Failed to estimate token count",
-        error,
-      );
-    }
+    const estimatedTokens = Math.ceil(str.length / 4);
+    return ok(estimatedTokens);
   }
 
   maxTokens(): number {
     switch (this.model) {
-      case "kimi-k2-thinking":
-        return 256000;
+      case "kimi-k2.5":
+        return 262000; // 262K context from RedPill
+      case "glm-4.7":
+        return 128000;
+      case "llama-3.3-70b-instruct":
+        return 128000;
+      case "qwen-2.5-7b-instruct":
+        return 32000;
       default:
         assertNever(this.model);
     }

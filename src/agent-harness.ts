@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { readFileContent } from "./lib/fs";
 import { Err, SrchdError } from "./lib/error";
-import { ExperimentResource } from "./resources/experiment";
-import { Runner } from "./runner";
-import { removeNulls } from "./lib/utils";
+import { RunResource } from "./resources/run";
+import { run as runExecution } from "./index";
 import { Model, MODELS } from "./models/provider";
 import { MessageResource } from "./resources/messages";
 import { db } from "./db";
 import { messages } from "./db/schema";
 import { eq } from "drizzle-orm";
 import { select, confirm, number, prompt } from "./lib/prompts";
-import { existsSync } from "fs";
 import { listProfiles, getDefaultProfile, profileExists } from "./lib/profiles";
 import { listProblems, problemExists, getProblemContent } from "./lib/problems";
 
@@ -36,27 +33,27 @@ program
 // Create command
 program
   .command("create [name]")
-  .description("Create a new experiment")
+  .description("Create a new run")
   .option("-p, --problem <id>", "Problem ID (directory name in problems/)")
   .option("-m, --model <model>", "AI model to use", "claude-sonnet-4-5")
   .option("-n, --agents <count>", "Number of agents", "1")
   .option("--profile <profile>", "Agent profile (defaults to 'example' or first available)")
   .action(async (name?: string, options?: any) => {
-    console.log("\n\x1b[1m=== Create New Experiment ===\x1b[0m\n");
+    console.log("\n\x1b[1m=== Create New Run ===\x1b[0m\n");
 
-    // Get experiment name
+    // Get run name
     if (!name) {
-      name = await prompt("Experiment name: ");
+      name = await prompt("Run name: ");
       if (!name) {
-        console.log("Error: Experiment name is required.");
+        console.log("Error: Run name is required.");
         process.exit(1);
       }
     }
 
-    // Check if experiment already exists
-    const existing = await ExperimentResource.findByName(name);
+    // Check if run already exists
+    const existing = await RunResource.findByName(name);
     if (existing.isOk()) {
-      console.log(`Error: Experiment '${name}' already exists.`);
+      console.log(`Error: Run '${name}' already exists.`);
       process.exit(1);
     }
 
@@ -156,8 +153,8 @@ program
       );
     }
 
-    // Create experiment
-    const experiment = await ExperimentResource.create({
+    // Create run
+    const run = await RunResource.create({
       name,
       problem_id: problemId,
       model,
@@ -165,37 +162,37 @@ program
       profile,
     });
 
-    const e = experiment.toJSON();
-    console.log(`\n\x1b[32m✓ Experiment created successfully!\x1b[0m`);
-    console.log(`\n  Name:    ${e.name}`);
-    console.log(`  Model:   ${e.model}`);
-    console.log(`  Agents:  ${e.agent_count}`);
-    console.log(`  Profile: ${e.profile}`);
-    console.log(`\nRun with: npx tsx src/agent-harness.ts run ${e.name}\n`);
+    const r = run.toJSON();
+    console.log(`\n\x1b[32m✓ Run created successfully!\x1b[0m`);
+    console.log(`\n  Name:    ${r.name}`);
+    console.log(`  Model:   ${r.model}`);
+    console.log(`  Agents:  ${r.agent_count}`);
+    console.log(`  Profile: ${r.profile}`);
+    console.log(`\nRun with: npx tsx src/agent-harness.ts run ${r.name}\n`);
   });
 
 // List command
 program
   .command("list")
-  .description("List all experiments")
+  .description("List all runs")
   .action(async () => {
-    const experiments = await ExperimentResource.all();
+    const runs = await RunResource.all();
 
-    if (experiments.length === 0) {
-      console.log("No experiments found.");
+    if (runs.length === 0) {
+      console.log("No runs found.");
       return;
     }
 
-    console.log(`\n\x1b[1mExperiments (${experiments.length}):\x1b[0m\n`);
-    for (const exp of experiments) {
-      const e = exp.toJSON();
-      const cost = await MessageResource.totalCostForExperiment(exp);
-      const tokens = await MessageResource.totalTokensForExperiment(exp);
+    console.log(`\n\x1b[1mRuns (${runs.length}):\x1b[0m\n`);
+    for (const run of runs) {
+      const r = run.toJSON();
+      const cost = await MessageResource.totalCostForRun(run);
+      const tokens = await MessageResource.totalTokensForRun(run);
 
-      console.log(`  \x1b[1m${e.name}\x1b[0m`);
-      console.log(`    Model:   ${e.model}`);
-      console.log(`    Agents:  ${e.agent_count}`);
-      console.log(`    Profile: ${e.profile}`);
+      console.log(`  \x1b[1m${r.name}\x1b[0m`);
+      console.log(`    Model:   ${r.model}`);
+      console.log(`    Agents:  ${r.agent_count}`);
+      console.log(`    Profile: ${r.profile}`);
       console.log(`    Cost:    $${cost.toFixed(4)} (${tokens.toLocaleString()} tokens)`);
       console.log();
     }
@@ -204,28 +201,28 @@ program
 
 // Run command
 program
-  .command("run <experiment>")
-  .description("Run agents in an experiment")
+  .command("run <run-name>")
+  .description("Run agents in a run")
   .option("--tick <agent>", "Run single tick for specific agent (0-indexed)")
   .option("--agent <index>", "Run specific agent continuously (0-indexed)")
   .option("--max-cost <amount>", "Maximum cost limit in dollars")
   .option("--no-thinking", "Disable extended thinking")
-  .action(async (experimentName: string, options?: any) => {
-    // Find experiment
-    const experimentRes = await ExperimentResource.findByName(experimentName);
-    if (experimentRes.isErr()) {
-      return exitWithError(experimentRes);
+  .action(async (runName: string, options?: any) => {
+    // Find run
+    const runRes = await RunResource.findByName(runName);
+    if (runRes.isErr()) {
+      return exitWithError(runRes);
     }
-    const experiment = experimentRes.value;
-    const expData = experiment.toJSON();
-    const agentCount = expData.agent_count;
+    const run = runRes.value;
+    const runData = run.toJSON();
+    const agentCount = runData.agent_count;
 
-    console.log(`\n\x1b[1m=== Run Experiment: ${experimentName} ===\x1b[0m\n`);
-    console.log(`  Model:   ${expData.model}`);
+    console.log(`\n\x1b[1m=== Run: ${runName} ===\x1b[0m\n`);
+    console.log(`  Model:   ${runData.model}`);
     console.log(`  Agents:  ${agentCount}`);
-    console.log(`  Profile: ${expData.profile}`);
+    console.log(`  Profile: ${runData.profile}`);
 
-    const cost = await MessageResource.totalCostForExperiment(experiment);
+    const cost = await MessageResource.totalCostForRun(run);
     console.log(`  Current cost: $${cost.toFixed(4)}\n`);
 
     // Determine run mode
@@ -300,52 +297,7 @@ program
           : true)
       : false;
 
-    console.log("\n\x1b[1mStarting experiment...\x1b[0m\n");
-
-    // Build runners for all agents
-    const builders = await Promise.all(
-      agentIndices.map((agentIndex) =>
-        Runner.builder(experiment, agentIndex, {
-          thinking,
-        }),
-      ),
-    );
-    for (const res of builders) {
-      if (res.isErr()) {
-        return exitWithError(res);
-      }
-    }
-    const runners = removeNulls(
-      builders.map((res: any) => {
-        if (res.isOk()) {
-          return res.value;
-        }
-        return null;
-      }),
-    );
-
-    // Run single tick if specified
-    if (singleTick) {
-      console.log(`\nRunning single tick for agent ${agentIndices[0]}...\n`);
-      const tickResults = await Promise.all(runners.map((r: any) => r.tick()));
-      for (const tick of tickResults) {
-        if (tick.isErr()) {
-          return exitWithError(tick);
-        }
-      }
-      console.log("\n\x1b[32m✓ Single tick completed.\x1b[0m\n");
-      return;
-    }
-
-    // Check every 20 ticks except when near the max value
-    const shouldCheck = (
-      tickCount: number,
-      lastVal: number,
-      maxVal: number,
-    ): boolean => (lastVal / maxVal) < 0.95 ? tickCount % 20 === 0 : true;
-
-    let tickCount = 0;
-    let lastCost = await MessageResource.totalCostForExperiment(experiment);
+    console.log("\n\x1b[1mStarting run...\x1b[0m\n");
 
     // Fast shutdown - exit cleanly
     const fastShutdown = (reason: string) => {
@@ -358,8 +310,8 @@ program
       process.exit(0);
     };
 
-    // Set up keyboard listener for 'q' to quit
-    if (process.stdin.isTTY) {
+    // Set up keyboard listener for 'q' to quit (for continuous runs)
+    if (!singleTick && process.stdin.isTTY) {
       process.stdin.setRawMode(true);
       process.stdin.resume();
       process.stdin.on("data", (key) => {
@@ -372,58 +324,62 @@ program
           fastShutdown("Interrupted.");
         }
       });
+
+      // Display instructions
+      console.log("\n\x1b[36mPress 'q' to quit\x1b[0m\n");
     }
 
-    // Display instructions
-    console.log("\n\x1b[36mPress 'q' to quit\x1b[0m\n");
+    // Determine which agent(s) to run
+    const agentIndex = agentIndices.length === 1 ? agentIndices[0] : undefined;
 
-    // For continuous running, start each agent in its own independent loop
-    const runnerPromises = runners.map(async (runner: any) => {
-      while (true) {
-        if (maxCost && shouldCheck(tickCount, lastCost, maxCost)) {
-          lastCost = await MessageResource.totalCostForExperiment(experiment);
-          if (lastCost > maxCost) {
-            console.log(`\nCost limit reached: $${lastCost.toFixed(2)}`);
-            fastShutdown("Cost limit reached.");
-            return;
-          }
+    // Execute the run using the library function
+    const result = await runExecution({
+      runName,
+      agentIndex,
+      singleTick,
+      maxCost,
+      thinking,
+      onCostUpdate: (currentCost: number) => {
+        if (maxCost && currentCost > maxCost) {
+          console.log(`\nCost limit reached: $${currentCost.toFixed(2)}`);
+          fastShutdown("Cost limit reached.");
         }
-
-        const tick = await runner.tick();
-        tickCount++;
-        if (tick.isErr()) {
-          // eslint-disable-next-line
-          throw tick;
-        }
-      }
+      },
     });
 
-    // Wait for agents to finish or stop
-    try {
-      await Promise.all(runnerPromises);
-    } catch (error) {
-      fastShutdown("Error occurred.");
-      return exitWithError(error as any);
+    if (result.isErr()) {
+      return exitWithError(result);
+    }
+
+    if (singleTick) {
+      console.log("\n\x1b[32m✓ Single tick completed.\x1b[0m\n");
+    } else {
+      console.log("\n\x1b[32m✓ Run completed.\x1b[0m\n");
+    }
+
+    // Cleanup stdin if needed
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
     }
   });
 
 // Clean command
 program
-  .command("clean <experiment>")
-  .description("Delete an experiment and all its data")
-  .action(async (experimentName: string) => {
-    // Find experiment
-    const experimentRes = await ExperimentResource.findByName(experimentName);
-    if (experimentRes.isErr()) {
-      return exitWithError(experimentRes);
+  .command("clean <run-name>")
+  .description("Delete a run and all its data")
+  .action(async (runName: string) => {
+    // Find run
+    const runRes = await RunResource.findByName(runName);
+    if (runRes.isErr()) {
+      return exitWithError(runRes);
     }
-    const experiment = experimentRes.value;
-    const expId = experiment.toJSON().id;
+    const run = runRes.value;
+    const runId = run.toJSON().id;
 
-    console.log(`\n\x1b[1m=== Clean Experiment: ${experimentName} ===\x1b[0m\n`);
+    console.log(`\n\x1b[1m=== Clean Run: ${runName} ===\x1b[0m\n`);
 
     const confirmed = await confirm(
-      "Delete experiment and all data?",
+      "Delete run and all data?",
       false,
     );
 
@@ -432,16 +388,16 @@ program
       return;
     }
 
-    console.log(`\nDeleting experiment '${experimentName}'...`);
+    console.log(`\nDeleting run '${runName}'...`);
 
     // Delete messages
     console.log("  Deleting messages...");
-    db.delete(messages).where(eq(messages.experiment, expId)).run();
+    db.delete(messages).where(eq(messages.run, runId)).run();
 
-    console.log("  Deleting experiment...");
-    await experiment.delete();
+    console.log("  Deleting run...");
+    await run.delete();
 
-    console.log(`\n\x1b[32m✓ Experiment '${experimentName}' deleted.\x1b[0m\n`);
+    console.log(`\n\x1b[32m✓ Run '${runName}' deleted.\x1b[0m\n`);
   });
 
 program.parse();

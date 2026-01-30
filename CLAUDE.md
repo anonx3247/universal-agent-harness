@@ -266,5 +266,26 @@ When running experiments, you can set a maximum cost limit to automatically stop
 - **Mistral**: Devstral, Mistral Large, Codestral
 - **Moonshot AI**: Kimi K2 Thinking
 - **Deepseek**: Deepseek Chat, Reasoner
+- **RedPill AI**: Kimi K2.5, GLM-4, Llama 70B, Qwen 2.5 7B Instruct (TEE-protected)
 
 Each provider implements the `LLM` interface with `complete()` method that handles streaming responses and tool calls.
+
+### RedPill AI Setup
+
+RedPill AI provides TEE (Trusted Execution Environment) protected access to multiple LLM models. To use RedPill models:
+
+1. Get your API key from [RedPill AI](https://docs.redpill.ai)
+2. Set the environment variable:
+   ```bash
+   export REDPILL_API_KEY=sk-your-api-key-here
+   ```
+3. Use RedPill models in your experiments:
+   ```bash
+   npx tsx src/agent-harness.ts create my-exp -p problem.txt -m llama-3.3-70b-instruct
+   ```
+
+Available RedPill models:
+- `kimi-k2.5` - Advanced reasoning model (262K context) - $0.60/$3.00 per M tokens
+- `glm-4.7` - General purpose model (128K context) - $0.85/$3.30 per M tokens
+- `llama-3.3-70b-instruct` - Meta's Llama 3.3 70B (128K context) - $2.00/$2.00 per M tokens
+- `qwen-2.5-7b-instruct` - TEE-native model (32K context) - $0.04/$0.10 per M tokens
