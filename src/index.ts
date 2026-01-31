@@ -154,21 +154,30 @@ export async function run(
 
   const runnerPromises = runners.map(async (runner: any) => {
     while (true) {
-      // Check cost limit
-      if (config.maxCost && tickCount % 20 === 0) {
-        lastCost = await MessageResource.totalCostForRun(run);
-        if (config.onCostUpdate) {
-          config.onCostUpdate(lastCost);
-        }
-        if (lastCost > config.maxCost) {
-          return;
-        }
-      }
-
       const tick = await runner.tick();
       tickCount++;
       if (tick.isErr()) {
         return tick;
+      }
+
+      // Send message callback after each tick
+      if (config.onMessage) {
+        const messages = await MessageResource.listMessagesByRun(run);
+        const latest = messages[messages.length - 1];
+        if (latest) {
+          config.onMessage(latest.toJSON());
+        }
+      }
+
+      // Update cost after each tick
+      if (config.onCostUpdate || config.maxCost) {
+        lastCost = await MessageResource.totalCostForRun(run);
+        if (config.onCostUpdate) {
+          config.onCostUpdate(lastCost);
+        }
+        if (config.maxCost && lastCost > config.maxCost) {
+          return;
+        }
       }
     }
   });
