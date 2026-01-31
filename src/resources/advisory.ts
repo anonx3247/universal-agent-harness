@@ -1,6 +1,6 @@
 import { db } from "@app/db";
 import { advisories } from "@app/db/schema";
-import { eq, and, or, InferSelectModel, InferInsertModel } from "drizzle-orm";
+import { eq, and, or, isNull, InferSelectModel, InferInsertModel } from "drizzle-orm";
 
 type Advisory = InferSelectModel<typeof advisories>;
 
@@ -31,7 +31,7 @@ export class AdvisoryResource {
           eq(advisories.delivered, false),
           or(
             eq(advisories.agent_index, agentIndex),
-            eq(advisories.agent_index, null)
+            isNull(advisories.agent_index)
           )
         )
       );

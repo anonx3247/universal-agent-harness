@@ -145,12 +145,12 @@ export async function getMessages(
   const { RunResource } = await import("./run");
   const runRes = await RunResource.findByName(runName);
 
-  if (!runRes.success) {
-    return { success: false, message: runRes.message };
+  if (runRes.isErr()) {
+    return { success: false, message: runRes.error.message };
   }
 
   const messageResources = await MessageResource.listMessagesByAgent(
-    runRes.data,
+    runRes.value,
     agentIndex,
   );
 

@@ -265,7 +265,7 @@ export class MoonshotAILLM extends LLM {
         );
       }
 
-      const data = await response.json();
+      const data: any = await response.json();
       return ok(data.data.total_tokens);
     } catch (error) {
       return err(

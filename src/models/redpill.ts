@@ -9,7 +9,7 @@ import {
   Tool,
   TokenUsage,
 } from "./index";
-import { PreTrainedTokenizer } from "@huggingface/transformers";
+
 
 import OpenAI from "openai";
 import { Result, err, ok } from "@app/lib/error";

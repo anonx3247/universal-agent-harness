@@ -81,11 +81,11 @@ export class RunResource {
  */
 export async function cleanRun(runName: string): Promise<Result<void>> {
   const runRes = await RunResource.findByName(runName);
-  if (!runRes.success) {
+  if (runRes.isErr()) {
     return runRes;
   }
 
-  const run = runRes.data;
+  const run = runRes.value;
   const runId = run.toJSON().id;
 
   // Delete messages first

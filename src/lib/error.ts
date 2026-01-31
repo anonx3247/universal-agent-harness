@@ -69,7 +69,19 @@ export type ErrorCode =
   | "pod_initialization_error"
   | "namespace_deletion_error"
   | "port_forward_error"
-  | "string_edit_error";
+  | "string_edit_error"
+  | "invalid_config_error"
+  | "config_load_error"
+  | "mcp_config_error"
+  | "mcp_connection_error"
+  | "profiles_dir_not_found"
+  | "no_profiles_found"
+  | "read_profiles_error"
+  | "problems_dir_not_found"
+  | "no_problems_found"
+  | "read_problems_error"
+  | "problem_not_found"
+  | "read_problem_error";
 
 export class SrchdError extends Error {
   constructor(

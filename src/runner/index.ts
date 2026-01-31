@@ -21,13 +21,8 @@ import { assertNever } from "@app/lib/assert";
 import { RunConfig } from "./config";
 import { createLLM } from "@app/models/provider";
 import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 import { getProblemContent } from "@app/lib/problems";
 import { getProfilePath } from "@app/lib/profiles";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 function loadPromptForProfile(profile: string): string {
   const promptPath = getProfilePath(profile, "prompt.md");

@@ -52,7 +52,7 @@ export async function createClientFromConfig(
         command: processed.command,
         args: processed.args || [],
         env: {
-          ...process.env,
+          ...process.env as Record<string, string>,
           ...processed.env,
         },
       });

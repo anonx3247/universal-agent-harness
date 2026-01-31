@@ -183,7 +183,7 @@ export async function run(
   });
 
   await Promise.all(runnerPromises);
-  return { success: true, data: undefined };
+  return ok(undefined);
 }
 
 /**
@@ -208,7 +208,7 @@ export async function listRuns(): Promise<RunResource[]> {
 export async function getRunCost(
   run: RunResource
 ): Promise<number> {
-  return await MessageResource.totalCostForExperiment(run);
+  return await MessageResource.totalCostForRun(run);
 }
 
 /**
@@ -217,7 +217,7 @@ export async function getRunCost(
 export async function getRunTokens(
   run: RunResource
 ): Promise<number> {
-  return await MessageResource.totalTokensForExperiment(run);
+  return await MessageResource.totalTokensForRun(run);
 }
 
 /**
