@@ -1,10 +1,7 @@
 import { readFileSync, existsSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 import { err, ok, Result } from "./error";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { getProfilesDir } from "./profiles";
 
 /**
  * MCP Server Configuration
@@ -64,7 +61,7 @@ export type ProfileConfig = {
  * Load MCP server configuration from profile
  */
 export function loadProfileMCPConfig(profile: string): Result<MCPServerConfig[]> {
-  const configPath = join(__dirname, "../../profiles", profile, "settings.json");
+  const configPath = join(getProfilesDir(), profile, "settings.json");
 
   // If no settings file, return empty array (just computer tool)
   if (!existsSync(configPath)) {
