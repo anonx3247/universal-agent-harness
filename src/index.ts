@@ -231,6 +231,11 @@ export { RunResource } from "./resources/run";
 export { MessageResource } from "./resources/messages";
 export { Runner } from "./runner";
 
+// Advisory API
+export { sendAdvisory, getPendingAdvisories, advisoryEmitter } from "./lib/advisory";
+export type { AdvisoryMessage } from "./lib/advisory";
+export { AdvisoryResource } from "./resources/advisory";
+
 // Model types and utilities
 export type { Model } from "./models/provider";
 export { createLLM, MODELS } from "./models/provider";

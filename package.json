@@ -1,5 +1,5 @@
 {
-  "name": "universal-agent-harness",
+  "name": "@anonx3247/universal-agent-harness",
   "version": "0.1.0",
   "description": "Universal multi-agent orchestration system with MCP server support",
   "type": "module",
@@ -12,7 +12,7 @@
     }
   },
   "imports": {
-    "@app/*": "./src/*"
+    "@app/*": "./dist/*"
   },
   "bin": {
     "agent-harness": "./dist/agent-harness.js"
