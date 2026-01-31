@@ -1,6 +1,6 @@
 {
   "name": "@anonx3247/universal-agent-harness",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Universal multi-agent orchestration system with MCP server support",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,9 +10,6 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
-  },
-  "imports": {
-    "@app/*": "./dist/*"
   },
   "bin": {
     "agent-harness": "./dist/agent-harness.js"
@@ -25,7 +22,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "NODE_OPTIONS='--max-old-space-size=8192' eslint --cache --cache-location .eslintcache src/",
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "dev": "tsx src/agent-harness.ts"
   },
   "devDependencies": {
@@ -35,6 +32,7 @@
     "@types/tar-stream": "^3.1.4",
     "drizzle-kit": "^0.31.4",
     "eslint": "^9.39.1",
+    "tsc-alias": "^1.8.16",
     "tsx": "^4.0.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.46.3"
