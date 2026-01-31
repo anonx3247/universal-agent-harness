@@ -60,3 +60,18 @@ export const messages = sqliteTable(
   },
   (t) => [unique().on(t.run, t.agent, t.position)],
 );
+
+export const advisories = sqliteTable("advisories", {
+  id: integer("id").primaryKey(),
+  created: integer("created", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  run_id: integer("run_id")
+    .notNull()
+    .references(() => runs.id),
+  agent_index: integer("agent_index"), // null means broadcast
+  content: text("content").notNull(),
+  delivered: integer("delivered", { mode: "boolean" })
+    .notNull()
+    .default(false),
+});
