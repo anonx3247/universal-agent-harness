@@ -10,7 +10,11 @@ import { RunResource } from "./resources/run";
 import { MessageResource } from "./resources/messages";
 import { Runner } from "./runner";
 import { Model } from "./models/provider";
+import { Message } from "./models";
 import { Result, ok, err } from "./lib/error";
+
+/** A stored message with its database ID */
+export type StoredMessage = Message & { id: number };
 
 /**
  * Configuration for creating a new run
@@ -43,9 +47,11 @@ export interface RunConfig {
   /** Optional: Enable extended thinking (default: true) */
   thinking?: boolean;
   /** Optional: Callback for each agent message */
-  onMessage?: (message: any) => void;
+  onMessage?: (message: StoredMessage) => void;
   /** Optional: Callback for cost updates */
   onCostUpdate?: (cost: number) => void;
+  /** Optional: Stop condition — called with the latest message after each tick; return true to stop */
+  stopOn?: (message: StoredMessage) => boolean;
 }
 
 /**
@@ -94,7 +100,7 @@ export async function createRun(
  */
 export async function run(
   config: RunConfig
-): Promise<Result<{ cost: number } | void>> {
+): Promise<Result<{ cost: number; stopped?: true } | void>> {
   // Find run
   const runRes = await RunResource.findByName(config.runName);
   if (runRes.isErr()) {
@@ -145,6 +151,15 @@ export async function run(
     // Calculate total cost
     const totalCost = await MessageResource.totalCostForRun(run);
 
+    // Check stopOn for single tick
+    if (config.stopOn) {
+      const msgs = await MessageResource.listMessagesByRun(run);
+      const latest = msgs[msgs.length - 1];
+      if (latest && config.stopOn(latest.toJSON())) {
+        return ok({ cost: totalCost, stopped: true as const });
+      }
+    }
+
     return ok({ cost: totalCost });
   }
 
@@ -160,13 +175,17 @@ export async function run(
         return tick;
       }
 
-      // Send message callback after each tick
-      if (config.onMessage) {
-        const messages = await MessageResource.listMessagesByRun(run);
-        const latest = messages[messages.length - 1];
-        if (latest) {
-          config.onMessage(latest.toJSON());
-        }
+      // Get latest message for callbacks and stop condition
+      const latestMessages = await MessageResource.listMessagesByRun(run);
+      const latest = latestMessages[latestMessages.length - 1];
+
+      if (latest && config.onMessage) {
+        config.onMessage(latest.toJSON());
+      }
+
+      // Check stop condition
+      if (latest && config.stopOn && config.stopOn(latest.toJSON())) {
+        return;
       }
 
       // Update cost after each tick
