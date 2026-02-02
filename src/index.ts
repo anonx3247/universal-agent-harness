@@ -50,8 +50,31 @@ export interface RunConfig {
   onMessage?: (message: StoredMessage) => void;
   /** Optional: Callback for cost updates */
   onCostUpdate?: (cost: number) => void;
-  /** Optional: Stop condition — called with the latest message after each tick; return true to stop */
-  stopOn?: (message: StoredMessage) => boolean;
+  /** Optional: Stop condition — called with messages from the last tick (assistant + tool results); return true to stop */
+  stopOn?: (messages: StoredMessage[]) => boolean;
+}
+
+/**
+ * Extract the messages from the last tick: the last assistant message
+ * and the following user message (tool results), if present.
+ */
+function getLastTickMessages(msgs: MessageResource[]): MessageResource[] {
+  if (msgs.length === 0) return [];
+
+  const last = msgs[msgs.length - 1];
+  const lastJson = last.toJSON();
+
+  // If last message is a user message (tool results), include it and the assistant message before it
+  if (lastJson.role === "user" && msgs.length >= 2) {
+    const prev = msgs[msgs.length - 2];
+    if (prev.toJSON().role === "agent") {
+      return [prev, last];
+    }
+    return [last];
+  }
+
+  // Last message is an assistant message
+  return [last];
 }
 
 /**
@@ -154,8 +177,8 @@ export async function run(
     // Check stopOn for single tick
     if (config.stopOn) {
       const msgs = await MessageResource.listMessagesByRun(run);
-      const latest = msgs[msgs.length - 1];
-      if (latest && config.stopOn(latest.toJSON())) {
+      const tickMessages = getLastTickMessages(msgs);
+      if (tickMessages.length > 0 && config.stopOn(tickMessages.map(m => m.toJSON()))) {
         return ok({ cost: totalCost, stopped: true as const });
       }
     }
@@ -175,16 +198,16 @@ export async function run(
         return tick;
       }
 
-      // Get latest message for callbacks and stop condition
+      // Get last tick messages for callbacks and stop condition
       const latestMessages = await MessageResource.listMessagesByRun(run);
-      const latest = latestMessages[latestMessages.length - 1];
+      const tickMessages = getLastTickMessages(latestMessages);
 
-      if (latest && config.onMessage) {
-        config.onMessage(latest.toJSON());
+      if (tickMessages.length > 0 && config.onMessage) {
+        config.onMessage(tickMessages[tickMessages.length - 1].toJSON());
       }
 
       // Check stop condition
-      if (latest && config.stopOn && config.stopOn(latest.toJSON())) {
+      if (tickMessages.length > 0 && config.stopOn && config.stopOn(tickMessages.map(m => m.toJSON()))) {
         return;
       }
 
