@@ -100,7 +100,7 @@ export function ok<T>(value: T): Ok<T> {
 export function err(
   code: ErrorCode,
   message: string,
-  cause?: any,
+  cause?: unknown,
 ): Err<SrchdError> {
   const errorCause = cause instanceof Error ? cause : null;
   if (errorCause) {

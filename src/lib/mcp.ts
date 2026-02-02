@@ -12,9 +12,9 @@ export async function createClientServerPair(
   server: McpServer,
 ): Promise<[Client, McpServer]> {
   const client = new Client({
-    // @ts-ignore use private _serverInfo
+    // @ts-expect-error use private _serverInfo
     name: server.server._serverInfo.name,
-    // @ts-ignore use private _serverInfo
+    // @ts-expect-error use private _serverInfo
     version: server.server._serverInfo.version,
   });
 
@@ -82,7 +82,7 @@ export async function createClientFromConfig(
     } else {
       return err(
         "mcp_config_error",
-        `Unsupported transport type: ${(processed as any).transport}`,
+        `Unsupported transport type: ${(processed as MCPServerConfig).transport}`,
       );
     }
   } catch (error) {

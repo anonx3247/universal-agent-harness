@@ -3,6 +3,7 @@ import { Result } from "@app/lib/error";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { provider } from "./provider";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ProviderData = Partial<Record<provider, any>>;
 
 export type TokenUsage = {
@@ -23,6 +24,7 @@ export interface ToolUse {
   type: "tool_use";
   id: string;
   name: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   input: any;
   provider: ProviderData | null;
 }

@@ -31,7 +31,7 @@ export async function concurrentExecutor<T, V>(
    * once across all workers.
    */
   async function worker() {
-    let work: any;
+    let work: { item: T; index: number } | undefined;
 
     // Continue processing while there are items in the queue.
     while ((work = queue.shift())) {

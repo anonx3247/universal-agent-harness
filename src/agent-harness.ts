@@ -38,6 +38,7 @@ program
   .option("-m, --model <model>", "AI model to use", "claude-sonnet-4-5")
   .option("-n, --agents <count>", "Number of agents", "1")
   .option("--profile <profile>", "Agent profile (defaults to 'example' or first available)")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   .action(async (name?: string, options?: any) => {
     console.log("\n\x1b[1m=== Create New Run ===\x1b[0m\n");
 
@@ -84,7 +85,7 @@ program
 
       problemId = await select(
         "Select problem:",
-        availableProblems as any,
+        availableProblems,
         availableProblems[0],
       );
     }
@@ -148,7 +149,7 @@ program
 
       profile = await select(
         "Select agent profile:",
-        validProfiles as any,
+        validProfiles,
         defaultProfile,
       );
     }
@@ -207,6 +208,7 @@ program
   .option("--agent <index>", "Run specific agent continuously (0-indexed)")
   .option("--max-cost <amount>", "Maximum cost limit in dollars")
   .option("--no-thinking", "Disable extended thinking")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   .action(async (runName: string, options?: any) => {
     // Find run
     const runRes = await RunResource.findByName(runName);

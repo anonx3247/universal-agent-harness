@@ -47,7 +47,7 @@ export interface RunConfig {
   /** Optional: Enable extended thinking (default: true) */
   thinking?: boolean;
   /** Optional: Callback for each agent message */
-  onMessage?: (message: StoredMessage) => void;
+  onTick?: (message: StoredMessage[]) => void;
   /** Optional: Callback for cost updates */
   onCostUpdate?: (cost: number) => void;
   /** Optional: Stop condition — called with messages from the last tick (assistant + tool results); return true to stop */
@@ -104,8 +104,9 @@ export async function createRun(
     });
 
     return ok(run);
-  } catch (error: any) {
-    return err("resource_creation_error", error?.message || "Failed to create run", error);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create run";
+    return err("resource_creation_error", message, error);
   }
 }
 
@@ -164,7 +165,7 @@ export async function run(
 
   // Run single tick if requested
   if (config.singleTick) {
-    const tickResults = await Promise.all(runners.map((r: any) => r.tick()));
+    const tickResults = await Promise.all(runners.map((r) => r.tick()));
     for (const tick of tickResults) {
       if (tick.isErr()) {
         return tick;
@@ -187,13 +188,11 @@ export async function run(
   }
 
   // Run continuously
-  let tickCount = 0;
   let lastCost = await MessageResource.totalCostForRun(run);
 
-  const runnerPromises = runners.map(async (runner: any) => {
+  const runnerPromises = runners.map(async (runner) => {
     while (true) {
       const tick = await runner.tick();
-      tickCount++;
       if (tick.isErr()) {
         return tick;
       }
@@ -202,8 +201,8 @@ export async function run(
       const latestMessages = await MessageResource.listMessagesByRun(run);
       const tickMessages = getLastTickMessages(latestMessages);
 
-      if (tickMessages.length > 0 && config.onMessage) {
-        config.onMessage(tickMessages[tickMessages.length - 1].toJSON());
+      if (tickMessages.length > 0 && config.onTick) {
+        config.onTick(tickMessages.map((msg) => msg.toJSON()));
       }
 
       // Check stop condition
@@ -274,7 +273,7 @@ export async function deleteRun(name: string): Promise<Result<void>> {
   const run = runRes.value;
   await run.delete();
 
-  return { isOk: () => true, isErr: () => false, value: undefined } as any;
+  return ok(undefined);
 }
 
 // Re-export types and utilities

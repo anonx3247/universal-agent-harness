@@ -79,7 +79,7 @@ export class MoonshotAILLM extends LLM {
                       return undefined;
                   }
                 });
-              case "agent":
+              case "agent": {
                 const message: ChatCompletionAssistantMessageParam & {
                   reasoning_content?: string;
                 } = {
@@ -108,6 +108,7 @@ export class MoonshotAILLM extends LLM {
                   }
                 });
                 return [message];
+              }
             }
           })
           .flat(),
@@ -135,7 +136,7 @@ export class MoonshotAILLM extends LLM {
           function: {
             name: tool.name,
             description: tool.description,
-            parameters: tool.inputSchema as any,
+            parameters: tool.inputSchema as Record<string, unknown>,
           },
           strict: false,
         })),
@@ -247,7 +248,7 @@ export class MoonshotAILLM extends LLM {
               function: {
                 name: tool.name,
                 description: tool.description,
-                parameters: tool.inputSchema as any,
+                parameters: tool.inputSchema as Record<string, unknown>,
               },
               strict: false,
             })),
@@ -265,7 +266,7 @@ export class MoonshotAILLM extends LLM {
         );
       }
 
-      const data: any = await response.json();
+      const data = (await response.json()) as { data: { total_tokens: number } };
       return ok(data.data.total_tokens);
     } catch (error) {
       return err(

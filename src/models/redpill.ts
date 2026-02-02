@@ -107,7 +107,7 @@ export class RedPillLLM extends LLM {
                       return undefined;
                   }
                 });
-              case "agent":
+              case "agent": {
                 const message: ChatCompletionAssistantMessageParam & {
                   reasoning_content?: string;
                 } = {
@@ -136,6 +136,7 @@ export class RedPillLLM extends LLM {
                   }
                 });
                 return [message];
+              }
             }
           })
           .flat(),
@@ -164,7 +165,7 @@ export class RedPillLLM extends LLM {
               function: {
                 name: tool.name,
                 description: tool.description,
-                parameters: tool.inputSchema as any,
+                parameters: tool.inputSchema as Record<string, unknown>,
               },
             })),
           }),

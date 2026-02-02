@@ -83,7 +83,7 @@ export class DeepseekLLM extends LLM {
                       return undefined;
                   }
                 });
-              case "agent":
+              case "agent": {
                 const message: ChatCompletionAssistantMessageParam & {
                   reasoning_content?: string;
                 } = {
@@ -115,6 +115,7 @@ export class DeepseekLLM extends LLM {
                   message.reasoning_content = "";
                 }
                 return [message];
+              }
             }
           })
           .flat(),
@@ -142,7 +143,7 @@ export class DeepseekLLM extends LLM {
             function: {
               name: tool.name,
               description: tool.description,
-              parameters: tool.inputSchema as any,
+              parameters: tool.inputSchema as Record<string, unknown>,
             },
             strict: false,
           })),
@@ -255,7 +256,7 @@ export class DeepseekLLM extends LLM {
       const encoded = tokenizer.encode(str);
 
       return ok(encoded.length);
-    } catch (e: any) {
+    } catch (e) {
       return err("model_error", "Could not tokenize", e);
     }
   }

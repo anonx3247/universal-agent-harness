@@ -203,7 +203,7 @@ export class OpenAILLM extends LLM {
           type: "function",
           name: tool.name,
           description: tool.description,
-          parameters: tool.inputSchema as any,
+          parameters: tool.inputSchema as Record<string, unknown>,
           strict: false,
         })),
         truncation: "auto",
@@ -307,7 +307,7 @@ export class OpenAILLM extends LLM {
   ): Promise<Result<number>> {
     try {
       const input = this.messages(messages);
-      // @ts-ignore - input_tokens exists on the response but not typed on unknown
+      // @ts-expect-error - input_tokens exists on the response but not typed
       const { input_tokens } = await this.client.post(
         "/responses/input_tokens",
         {
@@ -327,7 +327,7 @@ export class OpenAILLM extends LLM {
               type: "function",
               name: tool.name,
               description: tool.description,
-              parameters: tool.inputSchema as any,
+              parameters: tool.inputSchema as Record<string, unknown>,
               strict: false,
             })),
           },

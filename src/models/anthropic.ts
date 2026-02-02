@@ -97,7 +97,7 @@ export class AnthropicLLM extends LLM {
                         type: "image",
                         source: {
                           data: content.data,
-                          media_type: content.mimeType as any,
+                          media_type: content.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
                           type: "base64",
                         },
                       };
@@ -214,6 +214,7 @@ export class AnthropicLLM extends LLM {
         tools: tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           input_schema: tool.inputSchema as any,
         })),
         tool_choice: { type: "auto" },
@@ -312,6 +313,7 @@ export class AnthropicLLM extends LLM {
         tools: tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           input_schema: tool.inputSchema as any,
         })),
         tool_choice: { type: "auto" },

@@ -121,7 +121,7 @@ export class MistralLLM extends LLM {
             });
           }
           break;
-        case "agent":
+        case "agent": {
           const agentMsg = {
             role: "assistant" as const,
             content: msg.content
@@ -149,6 +149,8 @@ export class MistralLLM extends LLM {
               }),
           };
           mistralMessages.push(agentMsg);
+          break;
+        }
       }
     }
 
@@ -299,11 +301,12 @@ export class MistralLLM extends LLM {
                 // return acc + c.thinking.length;
                 throw new Error("Thinking not implemented yet for mistral");
                 return acc;
-              case "tool_result":
+              case "tool_result": {
                 const contentLength = c.content
                   .filter((c) => c.type === "text")
                   .reduce((acc, c) => acc + c.text.length, 0);
                 return acc + c.toolUseName.length + contentLength;
+              }
             }
           }, 0);
           return contentLength + acc;
